@@ -13,6 +13,8 @@ public class TrafficLight {
     static List<String> activeThreads;
 
     private static CyclicBarrier barrier = new CyclicBarrier(4);
+    private static final Object lock = new Object(); // Для синхронизации потоков
+
 
     public static void changeBarrier(int count_threads){
         if (count_threads != TrafficLight.count_threads && count_threads>0){
@@ -31,12 +33,21 @@ public class TrafficLight {
         MultiValueMap<Integer, Integer> canRide;
 
 
+
         public Car(String from, String direction) {
             setFrom();
             setDirection();
             fromIndex = findIndex(Car.from, from);
             directionIndex = findIndex(Car.direction, direction);
             canRide();
+        }
+
+        public Integer getFromIndex(){
+            return fromIndex;
+        }
+
+        public Integer getDirectionIndex(){
+            return directionIndex;
         }
 
         static private void setDirection() {
@@ -126,12 +137,12 @@ public class TrafficLight {
             canRide.put(leftFrom(fromIndex), left);
             canRide.put(rightFrom(fromIndex), right);
 
-            //System.out.println("Параллельные направления для " + Car.from.get(fromIndex) + " -> " + direction + ":");
+            System.out.println("Параллельные направления для " + Car.from.get(fromIndex) + " -> " + direction + ":");
             for (Map.Entry<Integer, Collection<Integer>> entry : canRide.entrySet()) {
                 Integer key = entry.getKey();
                 Collection<Integer> values = entry.getValue();
                 for (Integer value : values) {
-                    //System.out.println(Car.from.get(key) + " -> " + Car.direction.get(value));
+                    System.out.println(Car.from.get(key) + " -> " + Car.direction.get(value));
                 }
             }
         }
@@ -168,20 +179,20 @@ public class TrafficLight {
                     System.out.println("\n\tШаг выполнения: "+ k);
                 }
                 //System.out.println("Current threadData( " + threadName+  " ): " + threadData);
-
-                    if (activeThreads == null) {
-                        activeThreads = new ArrayList<>();
-                        //System.out.println("<" + threadName + " - " + k + "> создает массив активных потоков");
-                    }
-                    if (TrafficLight.activeThreads.isEmpty()) {
-                        TrafficLight.activeThreads.add(threadName);
-                    } else {
-                        if (canRideParallel(threadName, activeThreads)) {
-                            activeThreads.add(threadName);
-                        }
-                    }
-                    //System.out.println("<" + threadName + " - " + k + "> activeThreeads" + activeThreads);
-
+        synchronized (lock) {
+            if (activeThreads == null) {
+                activeThreads = new ArrayList<>();
+                System.out.println("<" + threadName + " - " + k + "> создает массив активных потоков");
+            }
+            if (TrafficLight.activeThreads.isEmpty()) {
+                TrafficLight.activeThreads.add(threadName);
+            } else {
+                if (canRideParallel(threadName, activeThreads)) {
+                    activeThreads.add(threadName);
+                }
+            }
+            System.out.println("<" + threadName + " - " + k + "> activeThreeads" + activeThreads);
+        }
                 try {
                     barrier.await();
                 } catch (InterruptedException | BrokenBarrierException e) {
@@ -216,26 +227,32 @@ public class TrafficLight {
         }
 
         private boolean canRideParallel(String threadName, List<String> activeThreads) {
-            MultiValueMap<Integer, Integer> currentThreadData = threadData.get(threadName);
+            //MultiValueMap<Integer, Integer> currentThreadData = threadData.get(threadName);
 
             for (String activeThread : activeThreads) {
-                MultiValueMap<Integer, Integer> activeThreadData = threadData.get(activeThread);
+                MultiValueMap<Integer, Integer> activeThreadData = threadData.get(activeThread); //canRide
+                boolean flag = false;
 
-                for (Map.Entry<Integer, Collection<Integer>> entry : currentThreadData.entrySet()) {
-                    Integer key = entry.getKey();
-                    if (activeThreadData.containsKey(key)) {
-                        Collection<Integer> values = entry.getValue();
-                        for (Integer value : values) {
-                            if (activeThreadData.get(key).contains(value)) {
-                                return false;
-                            }
+                for (Map.Entry<Integer, Collection<Integer>> threadData : activeThreadData.entrySet()) { // ключ со значениями в canRide
+                    Integer key = threadData.getKey();
+                    if (key.equals(fromIndex)) { //содержится ли в ключах ключ потока
+                        Collection<Integer> values = threadData.getValue();
+                        if(values.contains(directionIndex)){
+//                            System.out.println("fromIndex "+ fromIndex);
+//                            System.out.println("dirIndex "+ directionIndex);
+//                            System.out.println("activeThreadData "+ key + " : " + values);
+                            flag = true;
+                            break;
                         }
                     }
                 }
+                if (!flag){
+                    return false;
+                }
             }
-
             return true;
         }
+
 
 
         private boolean canRideParallel(String threadName, String otherThread) {
@@ -260,9 +277,9 @@ public class TrafficLight {
     public static void main(String[] args) {
         //System.out.println("Запуск потоков...");
         Thread t1 = new Thread(new Car("south", "straight"), "south-straight");
-        Thread t2 = new Thread(new Car("east", "left"), "east-left");
+        Thread t2 = new Thread(new Car("east", "right"), "east-right");
         Thread t3 = new Thread(new Car("north", "straight"), "north-straight");
-        Thread t4 = new Thread(new Car("west", "straight"), "west-straight");
+        Thread t4 = new Thread(new Car("west", "right"), "west-right");
         t1.start();
         t2.start();
         t3.start();
